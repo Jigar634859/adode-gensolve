@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawing Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            background-color: #333;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px auto;
+            width: 300px;
+            padding: 20px;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        canvas {
+            border: 1px solid #333;
+            margin-bottom: 10px;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        #prediction-result {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Drawing Recognition</h1>
+    <div class="container">
+        <div>
+            <h2>Draw Something</h2>
+            <canvas id="canvas" width="280" height="280"></canvas>
+            <button id="clear-button">Clear</button>
+            <button id="predict-button">Submit Drawing</button>
+        </div>
+        <div>
+            <h2>Upload CSV</h2>
+            <input type="file" id="csv-input" accept=".csv">
+            <button id="upload-csv-button">Upload CSV</button>
+        </div>
+        <div>
+            <h2>Prediction</h2>
+            <div id="prediction-result"></div>
+            <div id="image-result"></div>
+            <a id="download-link" style="display: none;">Download CSV</a>
+        </div>
+    </div>
+    <script>
+        window.addEventListener('load', () => {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            const clearButton = document.getElementById('clear-button');
+            const predictButton = document.getElementById('predict-button');
+            const csvInput = document.getElementById('csv-input');
+            const uploadCsvButton = document.getElementById('upload-csv-button');
+            const predictionResult = document.getElementById('prediction-result');
+            const imageResult = document.getElementById('image-result');
+            const downloadLink = document.getElementById('download-link');
+            let isDrawing = false;
+            let strokes = [];
+
+            // Start drawing on mouse down
+            canvas.addEventListener('mousedown', (e) => {
+                isDrawing = true;
+                strokes.push([]);
+            });
+
+            // Draw on canvas on mouse move
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDrawing) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    strokes[strokes.length - 1].push([x, y]);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
+            });
+
+            // Stop drawing on mouse up
+            canvas.addEventListener('mouseup', () => {
+                isDrawing = false;
+                ctx.beginPath();
+            });
+
+            // Clear canvas and strokes
+            clearButton.addEventListener('click', () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                strokes = [];
+            });
+
+            // Submit drawing for prediction
+            predictButton.addEventListener('click', async () => {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ strokes })
+                });
+
+                const result = await response.json();
+                console.log(result);  // Inspect the result
+                if(result.prediction==0)
+                {
+                    predictionResult.innerText = `Prediction: Circle`;
+                }
+                else if (result.prediction) {
+                    predictionResult.innerText = `Prediction: Triangle`;
+                } else {
+                    predictionResult.innerText = 'Prediction: Undefined';
+                }
+
+                if (result.image) {
+                    const img = new Image();
+                    img.src = 'data:image/png;base64,' + result.image;
+                    imageResult.innerHTML = '';
+                    imageResult.appendChild(img);
+                }
+
+                if (result.csv) {
+                    const csvBlob = new Blob([result.csv], { type: 'text/csv' });
+                    const csvUrl = URL.createObjectURL(csvBlob);
+                    downloadLink.href = csvUrl;
+                    downloadLink.download = 'prediction.csv';
+                    downloadLink.style.display = 'block';
+                    downloadLink.innerText = 'Download CSV';
+                } else {
+                    downloadLink.style.display = 'none';
+                }
+            });
+
+            // Upload CSV for prediction
+            uploadCsvButton.addEventListener('click', async () => {
+                const file = csvInput.files[0];
+                if (!file) {
+                    alert("Please select a CSV file.");
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const csvData = e.target.result;
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ csv_data: csvData })
+                    });
+
+                    const result = await response.json();
+                    predictionResult.innerText = `Prediction: ${result.prediction}`;
+
+                    if (result.image) {
+                        const img = new Image();
+                        img.src = 'data:image/png;base64,' + result.image;
+                        imageResult.innerHTML = '';
+                        imageResult.appendChild(img);
+                    }
+
+                    if (result.csv) {
+                        const csvBlob = new Blob([result.csv], { type: 'text/csv' });
+                        const csvUrl = URL.createObjectURL(csvBlob);
+                        downloadLink.href = csvUrl;
+                        downloadLink.download = 'prediction.csv';
+                        downloadLink.style.display = 'block';
+                        downloadLink.innerText = 'Download CSV';
+                    } else {
+                        downloadLink.style.display = 'none';
+                    }
+                };
+                reader.readAsText(file);
+            });
+        });
+    </script>
+</body>
+</html>
